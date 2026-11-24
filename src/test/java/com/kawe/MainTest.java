@@ -18,7 +18,7 @@ class MainTest {
     void deveRetornarDezPorCentoParaPrecoDeCemReais() {
         double resultado = Main.calcularDesconto(100);
 
-        assertEquals(15, resultado);
+        assertEquals(10, resultado);
     }
 
     @Test
