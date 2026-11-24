@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
   issues: write
-
+  pull-requests: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
         id: ai
         if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python scripts/ai_review.py
 
       - name: Publicar sugestão da IA no Pull Request
