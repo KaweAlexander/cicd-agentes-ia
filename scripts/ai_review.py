@@ -3,10 +3,10 @@ import json
 import os
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 # Recupera a chave dos Secrets do GitHub.
-api_key = os.environ["OPENAI_API_KEY"]
+api_key = os.environ["GEMINI_API_KEY"]
 
 # Localiza os relatórios do Maven.
 pasta = Path("test-results")
@@ -42,48 +42,56 @@ RELATÓRIOS:
 {conteudo}
 """
 
-# Prepara a solicitação para a API Responses.
+# Prepara a solicitação para a API Gemini.
 dados = json.dumps({
-    "model": "gpt-6-luna",
-    "input": prompt
+    "contents": [
+        {
+            "parts": [
+                {"text": prompt}
+            ]
+        }
+    ]
 }).encode("utf-8")
 
 requisicao = Request(
-    "https://api.openai.com/v1/responses",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
     data=dados,
     headers={
-        "Authorization": f"Bearer {api_key}",
+        "x-goog-api-key": api_key,
         "Content-Type": "application/json"
     },
     method="POST"
 )
 
-# Envia a solicitação à OpenAI.
+# Envia a solicitação ao Gemini.
 try:
     with urlopen(requisicao, timeout=90) as resposta:
         resultado = json.loads(resposta.read())
 
 except HTTPError as erro:
     mensagem = erro.read().decode("utf-8")
-    print("Erro retornado pela API:")
+    print("Erro retornado pela API Gemini:")
     print(mensagem)
+    raise SystemExit(1)
+
+except URLError as erro:
+    print(f"Erro de conexão com a API Gemini: {erro}")
     raise SystemExit(1)
 
 # Extrai a resposta textual.
 textos = []
 
-for item in resultado.get("output", []):
-    if item.get("type") == "message":
-        for parte in item.get("content", []):
-            if parte.get("type") == "output_text":
-                textos.append(parte.get("text", ""))
+for candidato in resultado.get("candidates", []):
+    for parte in candidato.get("content", {}).get("parts", []):
+        if "text" in parte:
+            textos.append(parte["text"])
 
 analise = "\n".join(textos)
 
 if not analise:
-    raise SystemExit("A IA não retornou uma análise.")
+    raise SystemExit("O Gemini não retornou uma análise.")
 
 # Salva a sugestão.
 Path("ai-review.md").write_text(analise, encoding="utf-8")
 
-print("Análise da IA gerada com sucesso.")
+print("Análise do Gemini gerada com sucesso.")
