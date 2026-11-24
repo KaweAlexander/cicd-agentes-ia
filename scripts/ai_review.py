@@ -12,7 +12,7 @@ MAX_TENTATIVAS = 4
 TIMEOUT = 90
 
 # Recupera a chave dos Secrets do GitHub.
-api_key = os.environ["DEEPSEEK_API_KEY"]
+api_key = os.environ["GEMINI_API_KEY"]
 
 # Localiza os relatórios do Maven.
 pasta = Path("test-results")
@@ -48,27 +48,24 @@ RELATÓRIOS:
 {conteudo}
 """
 
-# Prepara a solicitação para a API DeepSeek.
+# Prepara a solicitação para a API Gemini.
 dados = json.dumps({
-    "model": "deepseek-flash",
-    "messages": [
+    "contents": [
         {
-            "role": "system",
-            "content": "Você é um agente especializado em análise de falhas de testes de software."
-        },
-        {
-            "role": "user",
-            "content": prompt
+            "parts": [
+                {
+                    "text": prompt
+                }
+            ]
         }
-    ],
-    "stream": False
+    ]
 }).encode("utf-8")
 
 requisicao = Request(
-    "https://api.deepseek.com/chat/completions",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
     data=dados,
     headers={
-        "Authorization": f"Bearer {api_key}",
+        "x-goog-api-key": api_key,
         "Content-Type": "application/json"
     },
     method="POST"
@@ -85,7 +82,7 @@ for tentativa in range(1, MAX_TENTATIVAS + 1):
         with urlopen(requisicao, timeout=TIMEOUT) as resposta:
             resultado = json.loads(resposta.read())
 
-        print("Conexão com o DeepSeek realizada com sucesso.")
+        print("Conexão com o Gemini realizada com sucesso.")
         break
 
     except HTTPError as erro:
@@ -96,7 +93,7 @@ for tentativa in range(1, MAX_TENTATIVAS + 1):
         erros_temporarios = [429, 500, 503, 504]
 
         if erro.code not in erros_temporarios:
-            print("Erro não recuperável da API DeepSeek:")
+            print("Erro não recuperável da API Gemini:")
             print(mensagem)
             raise SystemExit(1)
 
@@ -137,20 +134,28 @@ for tentativa in range(1, MAX_TENTATIVAS + 1):
 
 # Verifica se alguma tentativa conseguiu obter resposta.
 if resultado is None:
-    raise SystemExit("Não foi possível obter uma resposta do DeepSeek.")
+    raise SystemExit("Não foi possível obter uma resposta do Gemini.")
 
-# Extrai a resposta textual.
-escolhas = resultado.get("choices", [])
+# Extrai a resposta textual do Gemini.
+candidatos = resultado.get("candidates", [])
 
-if not escolhas:
-    raise SystemExit("O DeepSeek não retornou nenhuma resposta.")
+if not candidatos:
+    raise SystemExit("O Gemini não retornou nenhuma resposta.")
 
-analise = escolhas[0].get("message", {}).get("content", "")
+partes = candidatos[0].get("content", {}).get("parts", [])
+
+if not partes:
+    raise SystemExit("O Gemini retornou uma resposta sem conteúdo.")
+
+analise = "".join(
+    parte.get("text", "")
+    for parte in partes
+)
 
 if not analise:
-    raise SystemExit("O DeepSeek retornou uma análise vazia.")
+    raise SystemExit("O Gemini retornou uma análise vazia.")
 
 # Salva a sugestão.
 Path("ai-review.md").write_text(analise, encoding="utf-8")
 
-print("Análise do DeepSeek gerada com sucesso.")
+print("Análise do Gemini gerada com sucesso.")
