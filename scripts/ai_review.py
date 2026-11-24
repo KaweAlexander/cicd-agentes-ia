@@ -1,12 +1,18 @@
 
 import json
 import os
+import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+from socket import timeout as SocketTimeout
+
+# Configurações do agente.
+MAX_TENTATIVAS = 4
+TIMEOUT = 90
 
 # Recupera a chave dos Secrets do GitHub.
-api_key = os.environ["GEMINI_API_KEY"]
+api_key = os.environ["DEEPSEEK_API_KEY"]
 
 # Localiza os relatórios do Maven.
 pasta = Path("test-results")
@@ -42,56 +48,109 @@ RELATÓRIOS:
 {conteudo}
 """
 
-# Prepara a solicitação para a API Gemini.
+# Prepara a solicitação para a API DeepSeek.
 dados = json.dumps({
-    "contents": [
+    "model": "deepseek-flash",
+    "messages": [
         {
-            "parts": [
-                {"text": prompt}
-            ]
+            "role": "system",
+            "content": "Você é um agente especializado em análise de falhas de testes de software."
+        },
+        {
+            "role": "user",
+            "content": prompt
         }
-    ]
+    ],
+    "stream": False
 }).encode("utf-8")
 
 requisicao = Request(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+    "https://api.deepseek.com/chat/completions",
     data=dados,
     headers={
-        "x-goog-api-key": api_key,
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     },
     method="POST"
 )
 
-# Envia a solicitação ao Gemini.
-try:
-    with urlopen(requisicao, timeout=90) as resposta:
-        resultado = json.loads(resposta.read())
+# Envia a solicitação com novas tentativas em caso de falhas temporárias.
+resultado = None
 
-except HTTPError as erro:
-    mensagem = erro.read().decode("utf-8")
-    print("Erro retornado pela API Gemini:")
-    print(mensagem)
-    raise SystemExit(1)
+for tentativa in range(1, MAX_TENTATIVAS + 1):
 
-except URLError as erro:
-    print(f"Erro de conexão com a API Gemini: {erro}")
-    raise SystemExit(1)
+    try:
+        print(f"Tentativa {tentativa} de {MAX_TENTATIVAS}...")
+
+        with urlopen(requisicao, timeout=TIMEOUT) as resposta:
+            resultado = json.loads(resposta.read())
+
+        print("Conexão com o DeepSeek realizada com sucesso.")
+        break
+
+    except HTTPError as erro:
+
+        mensagem = erro.read().decode("utf-8")
+
+        # Somente erros temporários serão repetidos.
+        erros_temporarios = [429, 500, 503, 504]
+
+        if erro.code not in erros_temporarios:
+            print("Erro não recuperável da API DeepSeek:")
+            print(mensagem)
+            raise SystemExit(1)
+
+        if tentativa == MAX_TENTATIVAS:
+            print("Número máximo de tentativas atingido.")
+            print(mensagem)
+            raise SystemExit(1)
+
+        # Respeita Retry-After quando fornecido pela API.
+        retry_after = erro.headers.get("Retry-After")
+
+        if retry_after:
+            try:
+                espera = max(float(retry_after), 2 ** tentativa)
+            except ValueError:
+                espera = 2 ** tentativa
+        else:
+            espera = 2 ** tentativa
+
+        print(f"API temporariamente indisponível (HTTP {erro.code}).")
+        print(f"Nova tentativa em {espera} segundos...")
+
+        time.sleep(espera)
+
+    except (TimeoutError, SocketTimeout, URLError) as erro:
+
+        if tentativa == MAX_TENTATIVAS:
+            print("Número máximo de tentativas atingido.")
+            print(f"Falha de comunicação: {erro}")
+            raise SystemExit(1)
+
+        espera = 2 ** tentativa
+
+        print(f"Falha temporária de comunicação: {erro}")
+        print(f"Nova tentativa em {espera} segundos...")
+
+        time.sleep(espera)
+
+# Verifica se alguma tentativa conseguiu obter resposta.
+if resultado is None:
+    raise SystemExit("Não foi possível obter uma resposta do DeepSeek.")
 
 # Extrai a resposta textual.
-textos = []
+escolhas = resultado.get("choices", [])
 
-for candidato in resultado.get("candidates", []):
-    for parte in candidato.get("content", {}).get("parts", []):
-        if "text" in parte:
-            textos.append(parte["text"])
+if not escolhas:
+    raise SystemExit("O DeepSeek não retornou nenhuma resposta.")
 
-analise = "\n".join(textos)
+analise = escolhas[0].get("message", {}).get("content", "")
 
 if not analise:
-    raise SystemExit("O Gemini não retornou uma análise.")
+    raise SystemExit("O DeepSeek retornou uma análise vazia.")
 
 # Salva a sugestão.
 Path("ai-review.md").write_text(analise, encoding="utf-8")
 
-print("Análise do Gemini gerada com sucesso.")
+print("Análise do DeepSeek gerada com sucesso.")
