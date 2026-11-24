@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 # Recupera a chave dos Secrets do GitHub.
 api_key = os.environ["OPENAI_API_KEY"]
@@ -58,8 +59,15 @@ requisicao = Request(
 )
 
 # Envia a solicitação à OpenAI.
-with urlopen(requisicao, timeout=90) as resposta:
-    resultado = json.loads(resposta.read())
+try:
+    with urlopen(requisicao, timeout=90) as resposta:
+        resultado = json.loads(resposta.read())
+
+except HTTPError as erro:
+    mensagem = erro.read().decode("utf-8")
+    print("Erro retornado pela API:")
+    print(mensagem)
+    raise SystemExit(1)
 
 # Extrai a resposta textual.
 textos = []
