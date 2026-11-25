@@ -11,7 +11,7 @@ class MainTest {
     void deveRetornarZeroPorCentoParaPrecoAbaixoDeCem() {
         double resultado = Main.calcularDesconto(50);
 
-        assertEquals(80, resultado);
+        assertEquals(0, resultado);
     }
 
     @Test
@@ -40,6 +40,13 @@ class MainTest {
         double resultado = Main.calcularDesconto(1000);
 
         assertEquals(20, resultado);
+    }
+
+    @Test
+    void deveRetornarZeroPorCentoParaPrecoNegativoOuZero() {
+        double resultado = Main.calcularDesconto(-50.0);
+
+        assertEquals(0, resultado);
     }
 }
 
